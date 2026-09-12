@@ -1,0 +1,16 @@
+<div class="login-wrap">
+  <div class="login-card">
+    <h1>Kanban</h1>
+    <p class="tag">Real-time collaborative boards</p>
+    <input [formControl]="email" placeholder="Email" type="email" (keyup.enter)="submit()" />
+    <input [formControl]="password" placeholder="Password (min 6 chars)" type="password" (keyup.enter)="submit()" />
+    @if (error()) {
+    <p class="error">{{ error() }}</p>
+    }
+    <button class="btn" (click)="submit()" [disabled]="loading()">{{ isRegister() ? 'Create account' : 'Log in' }}</button>
+    <button class="ghost" (click)="isRegister.set(!isRegister())">
+      {{ isRegister() ? 'Already have an account? Log in' : 'No account? Register' }}
+    </button>
+    <p class="demo">Demo: <code>demo@kanban.app</code> / <code>demo1234</code></p>
+  </div>
+</div>

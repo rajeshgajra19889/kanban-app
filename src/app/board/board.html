@@ -1,0 +1,510 @@
+@if (loading()) {
+<div class="hint">Loading board...</div>
+}
+
+<div class="board-header">
+  <a class="back" routerLink="/boards">&larr;</a>
+  @if (renamingTitle()) {
+  <input class="title-edit" [formControl]="editTitleCtrl" (keyup.enter)="commitBoardRename()"
+    (keyup.escape)="renamingTitle.set(false)" (blur)="commitBoardRename()" (click)="$event.stopPropagation()" />
+  } @else {
+  <h1 (click)="renameBoard()" [title]="isEditor() ? 'Click to rename board' : boardTitle()">{{ boardTitle() }}</h1>
+  }
+  @if (isEditor()) {
+  <button class="ghost rename" (click)="renameBoard()" title="Rename board">&#9998;</button>
+  }
+  <input class="search" [formControl]="searchText" placeholder="Search cards... (/)" />
+
+  <div class="filters">
+    <button class="chip" [class.on]="filterMode() === 'all'" (click)="filterMode.set('all')">All</button>
+    <button class="chip" [class.on]="filterMode() === 'mine'" (click)="filterMode.set('mine')"
+      [title]="'Only my cards (@' + selfHandle() + ')'">Mine</button>
+    <button class="chip" [class.on]="filterMode() === 'overdue'" (click)="filterMode.set('overdue')">Overdue</button>
+    <button class="chip" [class.on]="filterMode() === 'today'" (click)="filterMode.set('today')">Due today</button>
+    <select class="sort" [value]="sortMode()" (change)="sortMode.set($any($event.target).value)">
+      <option value="manual">Manual</option>
+      <option value="priority">By priority</option>
+      <option value="due">By due date</option>
+      <option value="title">Alphabetical</option>
+    </select>
+  </div>
+
+  <button class="ghost" (click)="membersOpen.set(true)" title="Members">&#128101;</button>
+  <button class="ghost" (click)="toggleNotify()" [title]="notifyOn() ? 'Notifications on' : 'Notifications off'">{{ notifyOn() ? '&#128276;' : '&#128279;' }}</button>
+  <button class="ghost" (click)="openCmd()" title="Command palette (Ctrl+K)">&#8984;K</button>
+  <button class="ghost" (click)="archiveOpen.set(!archiveOpen())" [title]="'Archived (' + archivedCards().length + ')'">&#128190; {{ archivedCards().length }}</button>
+  <button class="ghost" (click)="activityOpen.set(!activityOpen())" [title]="'Recent activity'">&#9201;</button>
+  <button class="ghost" (click)="settingsOpen.set(!settingsOpen())" title="Board settings">&#9881;</button>
+  @if (isEditor()) {
+  <select class="bg-pick" [value]="background()" (change)="setBackground($any($event.target).value)" title="Board background">
+    <option value="">Classic</option>
+    <option value="linear-gradient(135deg,#667eea 0%,#764ba2 100%)">Dusk</option>
+    <option value="linear-gradient(135deg,#f093fb 0%,#f5576c 100%)">Sunset</option>
+    <option value="linear-gradient(135deg,#4facfe 0%,#00f2fe 100%)">Ocean</option>
+    <option value="linear-gradient(135deg,#43e97b 0%,#38f9d7 100%)">Mint</option>
+    <option value="linear-gradient(135deg,#fa709a 0%,#fee140 100%)">Peach</option>
+    <option value="linear-gradient(135deg,#30cfd0 0%,#330867 100%)">Lagoon</option>
+  </select>
+  }
+  <button class="ghost" (click)="statsOpen.set(!statsOpen())" [title]="'Board stats'">&#128202;</button>
+  <button class="ghost" (click)="exportBoard()" title="Export JSON">&#8681;</button>
+  <label class="ghost import-label" title="Import JSON">&#8682;<input type="file" accept="application/json,.json" (change)="onImportFile($event)" hidden /></label>
+  <button class="ghost" (click)="toggleDark()" [title]="dark() ? 'Light mode' : 'Dark mode'">{{ dark() ? '&#9728;' : '&#9790;' }}</button>
+  <div class="online" [title]="(onlineUsers().length ? onlineUsers().length : 0) + ' online: ' + onlineUsers().map(u => u.handle).join(', ')">
+    @for (u of onlineUsers(); track u.id) {
+    <span class="avatar" [style.background-color]="u.color" [title]="u.handle">{{ u.handle.slice(0, 2).toUpperCase() }}</span>
+    }
+  </div>
+  <span class="who">{{ kanban.user()?.email }}@if (role() !== 'owner') { <span class="role-tag">{{ role() }}</span> }</span>
+  <a class="ghost logout" href="#" (click)="$event.preventDefault(); kanban.logout()">Log out</a>
+</div>
+
+@if (activityOpen()) {
+<div class="activity-panel">
+<h3>Recent activity</h3>
+    @if (activity().length === 0) {
+    <p class="hint">No activity yet.</p>
+    }
+    @for (a of activity(); track a.id) {
+    <div class="activity-log-item">{{ a.message }} <span class="ts">{{ relTime(a.created_at, tick()) }}</span></div>
+    }
+  </div>
+}
+
+@if (statsOpen()) {
+<div class="modal-backdrop" (click)="statsOpen.set(false)">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <h3>Board stats</h3>
+    <p class="stat-total">{{ stats().total }} cards total</p>
+    @for (l of stats().perList; track l.title) {
+    <div class="stat-row"><span>{{ l.title }}</span><b>{{ l.count }}</b></div>
+    }
+    <h4>Cards by assignee</h4>
+    @for (a of stats().perAssignee; track a.name) {
+    <div class="stat-row"><span>{{ a.name }}</span><b>{{ a.count }}</b></div>
+    }
+  </div>
+</div>
+}
+
+@if (membersOpen()) {
+<div class="modal-backdrop" (click)="membersOpen.set(false)">
+  <div class="modal members" (click)="$event.stopPropagation()">
+    <h3>Members</h3>
+    @for (m of members(); track m.userId) {
+    <div class="member-row">
+      <span class="m-email">{{ m.email }} <b class="m-role">{{ m.role }}</b></span>
+      @if (isOwner() && m.role !== 'owner') {
+      <div class="m-actions">
+        <button class="ghost" [title]="'Role: ' + (m.role === 'viewer' ? 'editor' : 'viewer')"
+          (click)="setMemberRole(m, m.role === 'viewer' ? 'editor' : 'viewer')">&#8694;</button>
+        <button class="ghost danger" (click)="removeMemberUser(m)">x</button>
+      </div>
+      }
+    </div>
+    }
+    @if (isOwner()) {
+    <div class="invite-row">
+      <input [formControl]="inviteEmail" placeholder="email@example.com" (keyup.enter)="invite()" />
+      <select [formControl]="inviteRole">
+        <option value="editor">Editor</option>
+        <option value="viewer">Viewer</option>
+      </select>
+      <button class="btn small" (click)="invite()">Invite</button>
+    </div>
+    @if (membersError()) {
+    <span class="err">{{ membersError() }}</span>
+    }
+    <p class="hint">Invite a registered user (email). Mention them in comments with <code>&#64;handle</code>.</p>
+    }
+  </div>
+</div>
+}
+
+<div class="board" [style.background]="background()" cdkDropList cdkDropListOrientation="horizontal" id="board-lists"
+  [cdkDropListConnectedTo]="['board-lists']" [cdkDropListData]="lists()" [cdkDropListDisabled]="!isEditor()"
+  (cdkDropListDropped)="onListDrop($event)">
+  @if (selected().size > 0) {
+  <div class="bulk-bar">
+    <span class="bulk-count">{{ selected().size }} selected</span>
+    <button class="btn small danger" (click)="bulkArchive()">Archive</button>
+    <select class="ghost small" (change)="bulkMove($any($event.target).value)">
+    <option value="" disabled selected>Move to list…</option>
+    @for (list of lists(); track list.id) {
+      <option [value]="list.id">{{ list.title }}</option>
+    }
+    </select>
+    <button class="ghost small" (click)="clearSelected()">Clear</button>
+  </div>
+  }
+  @for (list of lists(); track list.id) {
+  <div class="list" [class.collapsed]="isCollapsed(list.id)" [class.full]="listFull(list)"
+    cdkDrag [cdkDragData]="list" [cdkDragDisabled]="!isEditor()">
+    <div class="list-header" cdkDragHandle>
+      <button class="ghost collapse-btn" (click)="toggleCollapse(list.id); $event.stopPropagation()"
+        [title]="isCollapsed(list.id) ? 'Expand' : 'Collapse'">
+        {{ isCollapsed(list.id) ? '&#9654;' : '&#9664;' }}
+      </button>
+      <h3 (dblclick)="renameList(list)" [title]="'Double-click to rename'">{{ list.title }}
+        <span class="count" [title]="list.wipLimit ? 'Cards / WIP limit (click to change)' : 'Card count (click to set WIP limit)'"
+          (click)="setWip(list)">{{ listCount(list.id) }}{{ list.wipLimit ? '/' + list.wipLimit : '' }}</span>
+      </h3>
+      @if (isEditor()) {
+      <button class="ghost danger" (click)="deleteList(list.id); $event.stopPropagation()" title="Delete list">x</button>
+      }
+    </div>
+
+    <div class="cards"
+      cdkDropList
+      cdkDropListOrientation="mixed"
+      [id]="list.id.toString()"
+      [cdkDropListData]="cardsOf(list.id)"
+      [cdkDropListConnectedTo]="listIds()"
+      [cdkDropListDisabled]="!isEditor()"
+      (cdkDropListDropped)="onDrop($event)">
+      @for (card of cardsOf(list.id); track card.id) {
+      <div class="card" cdkDrag [cdkDragData]="card" [cdkDragDisabled]="!isEditor()"
+        (click)="onCardClick($event, card)" [style.backgroundColor]="cardBg(card)"
+        [class.selected]="isSelected(card.id)"
+        [class.just-dropped]="droppedId() === card.id">
+        @if (card.cover) {
+        <img class="cover" [src]="card.cover" alt="" />
+        }
+        <div class="card-body">
+          @if (card.labels.length) {
+          <div class="badges">
+            @for (label of card.labels; track label) {
+            <span class="label-chip" [style.background]="labelBg(label)">{{ label }}</span>
+            }
+          </div>
+          }
+          <div class="badges">
+            @if (card.priority) {
+            <span class="badge priority" [class]="card.priority === 'P1' ? 'p1' : card.priority === 'P2' ? 'p2' : 'p3'">{{ card.priority }}</span>
+            }
+            @if (card.due) {
+            <span class="badge due" [class.overdue]="isOverdue(card)" [class.today]="!isOverdue(card) && dueToday(card)">
+              {{ dueToday(card) ? 'Due today' : card.due }}
+            </span>
+            }
+            @if (card.recur) {
+            <span class="badge recur" [title]="'Repeats: ' + card.recur">&#8635;</span>
+            }
+          </div>
+          <span>{{ card.title }}</span>
+          @if (checklistProgress(card.id) >= 0) {
+          <span class="check-progress" [title]="'Checklist progress'">&#9744; {{ checklistProgress(card.id) }}%</span>
+          }
+          @if (card.attachments.length) {
+          <span class="attach-count" [title]="card.attachments.length + ' attachment(s)'">&#128206; {{ card.attachments.length }}</span>
+          }
+          @if (card.description) {
+          <p class="desc">{{ card.description }}</p>
+          }
+        </div>
+        <div class="card-side">
+          @if (assigneeInitials(card)) {
+          <span class="avatar" [title]="card.assignee">{{ assigneeInitials(card) }}</span>
+          }
+          @if (isEditor()) {
+          <button class="ghost" (click)="deleteCard(card.id); $event.stopPropagation()" title="Delete card">x</button>
+          }
+        </div>
+      </div>
+      }
+    </div>
+
+    @if (isEditor()) {
+    <input class="add-card" placeholder="Add a card... (N)" (keyup.enter)="addCard(list.id, $event.target)" />
+    }
+  </div>
+  }
+
+  @if (isEditor()) {
+  <div class="list add-list">
+    <input [formControl]="newListControl" placeholder="+ Add another list" (keyup.enter)="addList()" />
+  </div>
+  }
+</div>
+
+@if (archiveOpen()) {
+<div class="modal-backdrop" (click)="archiveOpen.set(false)">
+  <div class="modal archive" (click)="$event.stopPropagation()">
+    <h3>Archived ({{ archivedCards().length }})</h3>
+    @if (archivedCards().length === 0) {
+    <p class="hint">Nothing archived yet.</p>
+    }
+    @for (card of archivedCards(); track card.id) {
+    <div class="archived-row">
+      <span>{{ card.title }}</span>
+      <div>
+        @if (isEditor()) {
+        <button class="btn small" (click)="restoreArchived(card)">Restore</button>
+        <button class="ghost danger" (click)="deleteCard(card.id)">Delete</button>
+        }
+      </div>
+    </div>
+    }
+  </div>
+</div>
+}
+
+@if (editingCard()) {
+<div class="modal-backdrop" (click)="cancelEdit()">
+  <div class="modal card-editor" (click)="$event.stopPropagation()">
+    <h3>Edit card <span class="hash" [title]="'Card permalink #' + editingCard()!.id">#{{ editingCard()!.id }}</span>
+      @if (cardViewers().length) {
+      <span class="watch" [title]="cardViewers().map(u => u.handle).join(', ')">
+        @for (u of cardViewers(); track u.id) {
+        <span class="avatar" [style.background-color]="u.color">{{ u.handle.slice(0, 2).toUpperCase() }}</span>
+        }
+      </span>
+      }
+    </h3>
+    <input [formControl]="titleControl" placeholder="Title" [disabled]="!isEditor()" />
+
+    @if (editingCard()!.cover) {
+    <div class="cover-preview">
+      <img [src]="editingCard()!.cover" alt="" />
+      @if (isEditor()) {
+      <button class="ghost danger" (click)="clearCover()">Remove cover</button>
+      }
+    </div>
+    }
+
+    <label class="sec-label">Cover & attachments</label>
+    <div class="attach-row">
+      <input [formControl]="coverInput" placeholder="Image URL or link..." (keyup.enter)="addCoverUrl()" />
+      @if (isEditor()) {
+      <button class="btn small" (click)="addCoverUrl()">Cover</button>
+      <button class="ghost small" (click)="addLink()">Link</button>
+      <label class="ghost small file">File<input type="file" accept="image/*" (change)="onCoverFile($event)" hidden /></label>
+      <label class="ghost small file">Attach<input type="file" accept="image/*" (change)="onAttachmentFile($event)" hidden /></label>
+      }
+    </div>
+    @if (editingCard()!.attachments.length) {
+    <div class="attachments">
+      @for (a of editingCard()!.attachments; track a.id) {
+      <div class="att">
+        <a [href]="a.url" target="_blank" rel="noopener noreferrer">{{ a.type === 'image' ? '&#128444;' : '&#128279;' }} {{ a.name }}</a>
+        @if (isEditor()) {
+        <button class="ghost danger" (click)="removeAttachment(a.id)">x</button>
+        }
+      </div>
+      }
+    </div>
+    }
+
+    <div class="field-row">
+      <label>Description</label>
+      <label class="md-hint">Markdown supported</label>
+    </div>
+    <textarea [formControl]="descriptionControl" placeholder="**Markdown** and @mentions supported" rows="6" [disabled]="!isEditor()"></textarea>
+    @if ((descriptionControl.value ?? '').trim()) {
+    <div class="md-preview" [innerHTML]="descriptionControl.value ?? '' | md"></div>
+    }
+
+    <label class="sec-label">Labels</label>
+    <div class="label-row">
+      @for (label of labelOptions; track label) {
+      <button type="button" class="label-chip" [style.background]="labelBg(label)"
+        [class.selected]="labelsControl().includes(label)" (click)="isEditor() && toggleLabel(label)">{{ label }}</button>
+      }
+    </div>
+
+    <div class="field-row">
+      <label>Assignee</label>
+      <div class="mention-wrap">
+        <input [formControl]="assigneeControl" placeholder="Type name or email" [disabled]="!isEditor()"
+          (keydown)="onAssigneeKey($event)" (focus)="updateAssigneeList(assigneeControl.value ?? '')" />
+        @if (assigneeOpen()) {
+        <div class="assignee-dropdown">
+          @for (m of assigneeFiltered(); track m.email; let i = $index) {
+          <div class="mm-item" [class.sel]="assigneeSelected() === i" (mousedown)="chooseAssignee(m.email)">
+            {{ m.email }}
+          </div>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    <div class="field-row">
+      <label>Due date</label>
+      <input type="date" [formControl]="dueControl" [disabled]="!isEditor()" />
+    </div>
+    <div class="field-row">
+      <label>Priority</label>
+      <div class="priority-row">
+        <button type="button" class="badge priority p1" [class.selected]="priorityControl.value === 'P1'" (click)="isEditor() && priorityControl.setValue(priorityControl.value === 'P1' ? '' : 'P1')">P1</button>
+        <button type="button" class="badge priority p2" [class.selected]="priorityControl.value === 'P2'" (click)="isEditor() && priorityControl.setValue(priorityControl.value === 'P2' ? '' : 'P2')">P2</button>
+        <button type="button" class="badge priority p3" [class.selected]="priorityControl.value === 'P3'" (click)="isEditor() && priorityControl.setValue(priorityControl.value === 'P3' ? '' : 'P3')">P3</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <label>Repeat</label>
+      <select [value]="editingCard()!.recur ?? ''" (change)="setRecur($any($event.target).value)" [disabled]="!isEditor()">
+        @for (r of recurOptions; track r.value) {
+        <option [value]="r.value">{{ r.label }}</option>
+        }
+      </select>
+      <span class="md-hint">Archives &#8594; new copy</span>
+    </div>
+    <div class="color-row">
+      @for (c of colorOptions; track c) {
+      <button type="button" class="swatch" [class.selected]="colorControl.value === c"
+        [style.backgroundColor]="c ? swatchBg(c) : 'transparent'" (click)="isEditor() && colorControl.setValue(c)"
+        [attr.title]="c || 'none'"></button>
+      }
+    </div>
+
+    <label class="sec-label">Checklist</label>
+    <div class="checklist-wrap">
+      @for (item of checklistOf(editingCard()!.id); track item.id) {
+      <div class="check-row">
+        <input type="checkbox" [checked]="item.done" (change)="isEditor() && toggleChecklist(item)" [disabled]="!isEditor()" />
+        <span [class.done]="item.done">{{ item.text }}</span>
+        @if (isEditor()) {
+        <button class="ghost danger" (click)="removeChecklistItem(item)">x</button>
+        }
+      </div>
+      }
+      @if (checklistOf(editingCard()!.id).length === 0) {
+      <p class="hint">No checklist items. Use the field below to add one.</p>
+      }
+      <div class="check-add">
+        <input [formControl]="newChecklistControl" [placeholder]="isEditor() ? 'Add checklist item... (Enter)' : 'Viewer — read only'" (keyup.enter)="addChecklistItem()" [disabled]="!isEditor()" />
+      </div>
+    </div>
+
+    <label class="sec-label">Comments</label>
+    <div class="comments-wrap">
+      @for (comment of commentsOf(editingCard()!.id); track comment.id) {
+      <div class="comment-row">
+        <div class="comment-meta">{{ comment.author }} <span class="ts">{{ relTime(comment.created_at, tick()) }}</span></div>
+        <div class="comment-body" [innerHTML]="comment.body | md"></div>
+        @if (isEditor()) {
+        <button class="ghost danger" (click)="removeComment(comment)">x</button>
+        }
+        <div class="reactions">
+          @for (r of reactionList(comment); track r.emoji) {
+          <button class="reaction-chip" [class.mine]="r.mine" (click)="toggleReaction(comment, r.emoji)">{{ r.emoji }} {{ r.count }}</button>
+          }
+          @if (isEditor()) {
+          <button class="reaction-chip add" [class.mine]="hasReaction(comment, '👍')" (click)="toggleReaction(comment, '👍')" title="React">&#128077;</button>
+          }
+        </div>
+      </div>
+      }
+      @if (commentsOf(editingCard()!.id).length === 0) {
+      <p class="hint">No comments yet. Use the field below to comment.</p>
+      }
+      <div class="check-add mention-wrap">
+        @if (typingOn()) {
+        <div class="typing"><span class="dot"></span> {{ typingOn() }} is typing...</div>
+        }
+        <input [formControl]="newCommentControl" [placeholder]="isEditor() ? 'Write a comment... (@ to mention, Enter to post)' : 'Viewer — read only'" (keyup.enter)="addComment()" (keydown)="onCommentKey($event)" [disabled]="!isEditor()" />
+        @if (mentionOpen()) {
+        <div class="mention-menu">
+          @for (h of mentionFiltered(); track h; let i = $index) {
+          <div class="mm-item" [class.sel]="mentionSelected() === i" (mousedown)="chooseMention(h)">&#64;{{ h }}</div>
+          }
+        </div>
+        }
+  </div>
+</div>
+
+
+@if (isEditor()) {
+    <div class="template-row">
+      @if (templates().length) {
+      <select class="copy-list" (change)="applyTemplate($any($event.target).value)">
+        <option value="" disabled selected>Apply template...</option>
+        @for (t of templates(); track t.name) {
+        <option value="{{ t.name }}">{{ t.name }}</option>
+        }
+      </select>
+      }
+      <button class="ghost" (click)="saveTemplate()">Save as template</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" (click)="saveEdit()">Save</button>
+      <button class="ghost" (click)="duplicateCard(editingCard()!)">Duplicate</button>
+      <select class="copy-list" (change)="copyToList(editingCard()!, $any($event.target).value)">
+        <option value="" disabled selected>Copy to...</option>
+        @for (l of lists(); track l.id) {
+          @if (l.id !== editingCard()!.listId) {
+          <option value="{{ l.id }}">{{ l.title }}</option>
+          }
+        }
+      </select>
+      <button class="ghost" (click)="cancelEdit()">Cancel</button>
+      <button class="ghost" (click)="archiveEditing()">Archive</button>
+      <button class="ghost danger" (click)="deleteEditing()">Delete</button>
+    </div>
+    }
+  </div>
+</div>
+}
+
+@if (cmdOpen()) {
+<div class="modal-backdrop" (click)="closeCmd()">
+  <div class="modal palette" (click)="$event.stopPropagation()">
+    <input class="cmd-input" placeholder="Type to search cards or commands... (Ctrl+K)"
+      [value]="cmdQuery()" (input)="cmdQuery.set($any($event.target).value)" (keydown)="onCmdKey($event)" />
+    <div class="cmd-list">
+      @for (item of cmdItems(); track $index; let i = $index) {
+      <div class="cmd-item" [class.sel]="cmdIndex() === i" (mouseenter)="cmdIndex.set(i)" (click)="runCmd(item)">
+        <span class="cmd-label">{{ item.label }}</span>
+        <span class="cmd-hint">{{ item.hint }}</span>
+      </div>
+      }
+      @if (cmdItems().length === 0) {
+      <p class="hint">No results.</p>
+      }
+    </div>
+  </div>
+</div>
+}
+
+@if (lastDeleted()) {
+<div class="undo-toast">
+  <span>Deleted "{{ lastDeleted()!.title }}"</span>
+  <button class="btn small" (click)="undoLast()">Undo</button>
+</div>
+}
+
+
+@if (settingsOpen()) {
+<div class="modal-backdrop" (click)="settingsOpen.set(false)">
+  <div class="modal settings" (click)="$event.stopPropagation()">
+    <h3>Board settings</h3>
+
+    <label class="field">Board name
+      <div class="rename-row">
+        <input [formControl]="editTitleCtrl" (keyup.enter)="commitBoardRename()" (keyup.escape)="renamingTitle.set(false)"
+          (blur)="commitBoardRename()" />
+        @if (renamingTitle()) { <button class="btn small" (click)="commitBoardRename()">Save</button> }
+      </div>
+    </label>
+
+    <label class="field">Default role for new members
+      <select [formControl]="inviteRole">
+        <option value="editor">Editor</option>
+        <option value="viewer">Viewer</option>
+      </select>
+    </label>
+
+    <label class="switch-row"><input type="checkbox" [checked]="notifyOn()" (change)="toggleNotify()" /> Notify me about changes</label>
+    <label class="switch-row"><input type="checkbox" [checked]="dark()" (change)="toggleDark()" /> Dark mode</label>
+
+    <div class="modal-actions">
+      <button class="btn" (click)="settingsOpen.set(false)">Done</button>
+    </div>
+  </div>
+</div>
+}
+<div class="activity">
+  @for (t of toasts(); track t) {
+  <div class="activity-item">{{ t }}</div>
+  }
+</div>

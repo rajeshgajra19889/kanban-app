@@ -1,0 +1,44 @@
+<div class="boards-wrap">
+  <div class="top">
+    <h1>Your boards</h1>
+    <span class="who">{{ svc.user()?.email }}</span>
+    <button class="ghost" (click)="logout()">Log out</button>
+  </div>
+
+  <div class="grid">
+    @for (b of boards(); track b.id) {
+    <div class="board-card" (click)="open(b.id)" [style.background]="b.background || ''">
+      @if (renamingId() === b.id) {
+      <input class="inline-rename" [formControl]="editTitle" (keyup.enter)="commitRename(); $event.stopPropagation()"
+        (keyup.escape)="cancelRename(); $event.stopPropagation()" (blur)="commitRename()"
+        (click)="$event.stopPropagation()" />
+      } @else {
+      <h3 (click)="rename(b.id, b.title); $event.stopPropagation()" [title]="'Click to rename'">
+        {{ b.title }} @if (b.role !== 'owner') { <span class="tag">{{ b.role }}</span> }</h3>
+      }
+      <span class="open-link">Open &rarr;</span>
+      @if (b.role === 'owner') {
+      <button class="ghost danger del" (click)="remove(b.id, b.title); $event.stopPropagation()">x</button>
+      }
+    </div>
+    }
+
+    <div class="board-card new">
+      <input [formControl]="newTitle" placeholder="New board name..." (keyup.enter)="create()" />
+      <select class="template-pick" [value]="template()" (change)="template.set($any($event.target).value)">
+        <option value="">No template</option>
+        <option value="scrum">Scrum board</option>
+        <option value="career">Career tracker</option>
+        <option value="travel">Travel planner</option>
+      </select>
+      @if (error()) {
+      <span class="err">{{ error() }}</span>
+      }
+      <button class="btn small" (click)="create()">Create board</button>
+    </div>
+  </div>
+
+  @if (toast()) {
+  <div class="toast">{{ toast() }}</div>
+  }
+</div>
